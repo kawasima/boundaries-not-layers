@@ -88,10 +88,10 @@ public class CartController {
         return switch (JsonCartDecoders.ADD_ITEM.decode(body)) {
             case Ok(Tuple3(var userId, var productId, var quantity)) ->
                     tx.execute(status -> switch (addItemToCart.apply(userId, productId, quantity)) {
-                        case ItemAdded ignored -> created(null);
-                        case ProductNotFound ignored -> unprocessable("product_not_found");
-                        case SaleEnded ignored -> unprocessable("sale_ended");
-                        case CartFull ignored -> unprocessable("cart_full");
+                        case ItemAdded _ -> created(null);
+                        case ProductNotFound _ -> unprocessable("product_not_found");
+                        case SaleEnded _ -> unprocessable("sale_ended");
+                        case CartFull _ -> unprocessable("cart_full");
                     });
             case Err(var issues) -> badRequest(errorBody(issues, locale));
         };
@@ -104,9 +104,9 @@ public class CartController {
                 OrderId orderId = newOrderId();
                 yield tx.execute(status -> switch (placeOrder.apply(orderId, userId, orderer)) {
                     case OrderPlaced placed -> created(OrderViewEncoders.orderView(placed.order()));
-                    case EmptyCart ignored -> unprocessable("empty_cart");
-                    case SaleEnded ignored -> unprocessable("sale_ended");
-                    case ProductNotFound ignored -> unprocessable("product_not_found");
+                    case EmptyCart _ -> unprocessable("empty_cart");
+                    case SaleEnded _ -> unprocessable("sale_ended");
+                    case ProductNotFound _ -> unprocessable("product_not_found");
                 });
             }
             case Err(var issues) -> badRequest(errorBody(issues, locale));
@@ -117,15 +117,14 @@ public class CartController {
     public ResponseEntity<Object> quote(@RequestBody JsonNode body, Locale locale) {
         return switch (JsonCartDecoders.CHECKOUT.decode(body)) {
             case Ok(Tuple2(var userId, var orderer)) -> switch (orderer) {
-                // 見積は法人限定。個人は型で弾く。
-                case Corporation ignored -> {
+                case Corporation _ -> {
                     String validUntil = LocalDate.now().plusDays(30).toString();
                     yield switch (issueQuote.apply(newQuoteId(), userId, orderer, validUntil)) {
                         case Quotation quotation ->
-                                ResponseEntity.ok((Object) OrderViewEncoders.quotationView(quotation));
-                        case EmptyCart ignored2 -> unprocessable("empty_cart");
-                        case SaleEnded ignored2 -> unprocessable("sale_ended");
-                        case ProductNotFound ignored2 -> unprocessable("product_not_found");
+                                ResponseEntity.ok(OrderViewEncoders.quotationView(quotation));
+                        case EmptyCart _ -> unprocessable("empty_cart");
+                        case SaleEnded _ -> unprocessable("sale_ended");
+                        case ProductNotFound _ -> unprocessable("product_not_found");
                     };
                 }
                 case Individual ignored -> unprocessable(Map.of("error", "見積は法人のみ発行できます"));
