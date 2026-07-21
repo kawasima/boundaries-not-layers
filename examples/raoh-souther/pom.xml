@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.0.3</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.example</groupId>
+    <artifactId>raoh-souther</artifactId>
+    <version>1.0.0</version>
+    <name>raoh-souther</name>
+    <description>raoh 版カート例の完全移植。ドメインを Souther DSL で生成し、境界（HTTP/DB）は raoh で decode・encode する</description>
+
+    <properties>
+        <java.version>25</java.version>
+        <souther.version>0.1.0-rc1</souther.version>
+        <raoh.version>0.6.0</raoh.version>
+    </properties>
+
+    <dependencies>
+        <!-- Souther 生成物のランタイム -->
+        <dependency>
+            <groupId>net.unit8.souther</groupId>
+            <artifactId>souther-runtime</artifactId>
+            <version>${souther.version}</version>
+        </dependency>
+
+        <!-- raoh: core + JSON 境界 + jOOQ 境界 -->
+        <dependency>
+            <groupId>net.unit8.raoh</groupId>
+            <artifactId>raoh</artifactId>
+            <version>${raoh.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>net.unit8.raoh</groupId>
+            <artifactId>raoh-json</artifactId>
+            <version>${raoh.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>net.unit8.raoh</groupId>
+            <artifactId>raoh-jooq</artifactId>
+            <version>${raoh.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jooq</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>default-compile</id>
+                        <configuration>
+                            <annotationProcessorPaths>
+                                <path>
+                                    <groupId>net.unit8.souther</groupId>
+                                    <artifactId>souther-compiler</artifactId>
+                                    <version>${souther.version}</version>
+                                </path>
+                            </annotationProcessorPaths>
+                            <compilerArgs>
+                                <arg>-Asouther.source=${project.basedir}/src/main/souther</arg>
+                            </compilerArgs>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>default-testCompile</id>
+                        <configuration>
+                            <proc>none</proc>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

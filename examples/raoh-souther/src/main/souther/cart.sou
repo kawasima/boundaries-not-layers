@@ -1,0 +1,73 @@
+module com.example.cart.domain
+import String ( contains )
+import List ( fold, length )
+
+data Money = Int
+data Quantity = Int
+    invariant value > 0
+data TotalQuantity = Int
+    invariant value >= 0
+data Email = String
+    invariant String.contains("@", value)
+data CartId = String
+    invariant String.length(value) > 0
+data ProductId = String
+    invariant String.length(value) > 0
+data UserId = String
+    invariant String.length(value) > 0
+data OrderId = String
+    invariant String.length(value) > 0
+data QuoteId = String
+    invariant String.length(value) > 0
+
+data Individual = { email: Email, name: String }
+data Corporation = { email: Email, companyName: String, corporateNumber: String }
+data Orderer = Individual | Corporation
+
+data Product = { id: ProductId, onSale: Bool, price: Money }
+data CartItem = { productId: ProductId, quantity: Quantity }
+data Cart = { id: CartId, currentQuantity: TotalQuantity }
+data OrderLine = { productId: ProductId, quantity: Quantity, unitPrice: Money }
+data Charge = { subtotal: Money, discount: Money, total: Money }
+data Order = { id: OrderId, userId: UserId, orderer: Orderer, lines: List<OrderLine>, charge: Charge }
+data Quotation = { id: QuoteId, userId: UserId, orderer: Orderer, lines: List<OrderLine>, charge: Charge, validUntil: String }
+
+data SaleEnded
+data CartFull
+data EmptyCart
+
+behavior addToCart : (cart: Cart, product: Product, quantity: Quantity) -> CartItem | SaleEnded | CartFull
+    constructs CartItem, SaleEnded, CartFull
+let addToCart (cart, product, quantity) = {
+    require product.onSale else SaleEnded
+    require canAdd(cart.currentQuantity, quantity) else CartFull
+    CartItem { productId = product.id, quantity = quantity }
+}
+let canAdd (current: TotalQuantity, q: Quantity) = current.value + q.value <= 10000
+
+behavior priceLine : (product: Product, quantity: Quantity) -> OrderLine | SaleEnded
+    constructs OrderLine, SaleEnded
+let priceLine (product, quantity) = {
+    require product.onSale else SaleEnded
+    OrderLine { productId = product.id, quantity = quantity, unitPrice = product.price }
+}
+
+behavior placeOrder : (orderId: OrderId, userId: UserId, orderer: Orderer, lines: List<OrderLine>) -> Order | EmptyCart
+    constructs Order, EmptyCart, Charge, Money
+let placeOrder (orderId, userId, orderer, lines) = {
+    require length(lines) >= 1 else EmptyCart
+    Order { id = orderId, userId = userId, orderer = orderer, lines = lines, charge = chargeOf(lines) }
+}
+
+behavior issueQuote : (quoteId: QuoteId, userId: UserId, orderer: Orderer, lines: List<OrderLine>, validUntil: String) -> Quotation | EmptyCart
+    constructs Quotation, EmptyCart, Charge, Money
+let issueQuote (quoteId, userId, orderer, lines, validUntil) = {
+    require length(lines) >= 1 else EmptyCart
+    Quotation { id = quoteId, userId = userId, orderer = orderer, lines = lines, charge = chargeOf(lines), validUntil = validUntil }
+}
+
+let lineAmount (l: OrderLine) = l.quantity.value * l.unitPrice.value
+let subtotalOf (lines: List<OrderLine>) = fold((acc, l) -> acc + lineAmount(l), 0, lines)
+let discountOf (sub: Int) = if sub >= 5000 then sub * 10 / 100 else 0
+let chargeOf (lines: List<OrderLine>) = makeCharge(subtotalOf(lines))
+let makeCharge (sub: Int) = Charge { subtotal = Money(sub), discount = Money(discountOf(sub)), total = Money(sub - discountOf(sub)) }
