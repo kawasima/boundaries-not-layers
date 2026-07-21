@@ -1,9 +1,19 @@
 package com.example.cart.config;
 
-import com.example.cart.domain.AddToCart;
+import com.example.cart.domain.AddItemToCart;
 import com.example.cart.domain.IssueQuote;
+import com.example.cart.domain.LoadCart;
+import com.example.cart.domain.LoadProduct;
 import com.example.cart.domain.PlaceOrder;
-import com.example.cart.domain.PriceLine;
+import com.example.cart.domain.PriceCart;
+import com.example.cart.domain.SaveItem;
+import com.example.cart.domain.SaveOrder;
+import com.example.cart.infrastructure.JooqLoadCart;
+import com.example.cart.infrastructure.JooqLoadProduct;
+import com.example.cart.infrastructure.JooqPriceCart;
+import com.example.cart.infrastructure.JooqSaveItem;
+import com.example.cart.infrastructure.JooqSaveOrder;
+import org.jooq.DSLContext;
 import org.jooq.conf.RenderQuotedNames;
 import org.jooq.conf.Settings;
 import org.springframework.context.annotation.Bean;
@@ -15,7 +25,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * Souther 生成の振る舞いを Spring に配線する。DataSource / DSLContext / TransactionManager と
  * schema.sql の実行は Spring Boot autoconfig（spring-boot-starter-jooq + H2）に任せる。
  *
- * <p>振る舞いはすべて純粋（requires 無し）なので {@code Xxx.of()} で足りる。注入は不要。
+ * <p>INJECTED 振る舞い（{@link LoadProduct} / {@link LoadCart} / {@link SaveItem} / {@link PriceCart} /
+ * {@link SaveOrder}）は jOOQ 実装を基底型で公開し、COMPOSED 振る舞いは {@code bind(...)} で合成する。
  */
 @Configuration(proxyBeanMethods = false)
 public class CartConfig {
@@ -35,22 +46,42 @@ public class CartConfig {
     }
 
     @Bean
-    public AddToCart addToCart() {
-        return AddToCart.of();
+    public LoadProduct loadProduct(DSLContext dsl) {
+        return new JooqLoadProduct(dsl);
     }
 
     @Bean
-    public PriceLine priceLine() {
-        return PriceLine.of();
+    public LoadCart loadCart(DSLContext dsl) {
+        return new JooqLoadCart(dsl);
     }
 
     @Bean
-    public PlaceOrder placeOrder() {
-        return PlaceOrder.of();
+    public SaveItem saveItem(DSLContext dsl) {
+        return new JooqSaveItem(dsl);
     }
 
     @Bean
-    public IssueQuote issueQuote() {
-        return IssueQuote.of();
+    public PriceCart priceCart(DSLContext dsl) {
+        return new JooqPriceCart(dsl);
+    }
+
+    @Bean
+    public SaveOrder saveOrder(DSLContext dsl) {
+        return new JooqSaveOrder(dsl);
+    }
+
+    @Bean
+    public AddItemToCart addItemToCart(LoadProduct loadProduct, LoadCart loadCart, SaveItem saveItem) {
+        return AddItemToCart.bind(loadProduct, loadCart, saveItem);
+    }
+
+    @Bean
+    public PlaceOrder placeOrder(PriceCart priceCart, SaveOrder saveOrder) {
+        return PlaceOrder.bind(priceCart, saveOrder);
+    }
+
+    @Bean
+    public IssueQuote issueQuote(PriceCart priceCart) {
+        return IssueQuote.bind(priceCart);
     }
 }

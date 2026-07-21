@@ -32,39 +32,64 @@ data Charge = { subtotal: Money, discount: Money, total: Money }
 data Order = { id: OrderId, userId: UserId, orderer: Orderer, lines: List<OrderLine>, charge: Charge }
 data Quotation = { id: QuoteId, userId: UserId, orderer: Orderer, lines: List<OrderLine>, charge: Charge, validUntil: String }
 
+data PendingItem = { cart: Cart, item: CartItem }
+data PricedCart = { lines: List<OrderLine> }
+data ItemAdded = { productId: ProductId, quantity: Quantity }
+data OrderPlaced = { order: Order }
+
+data ProductNotFound
 data SaleEnded
 data CartFull
 data EmptyCart
 
-behavior addToCart : (cart: Cart, product: Product, quantity: Quantity) -> CartItem | SaleEnded | CartFull
-    constructs CartItem, SaleEnded, CartFull
-let addToCart (cart, product, quantity) = {
-    require product.onSale else SaleEnded
-    require canAdd(cart.currentQuantity, quantity) else CartFull
-    CartItem { productId = product.id, quantity = quantity }
-}
-let canAdd (current: TotalQuantity, q: Quantity) = current.value + q.value <= 10000
+data AddItemCommand = { userId: UserId, productId: ProductId, quantity: Quantity }
+data PlaceOrderCommand = { orderId: OrderId, userId: UserId, orderer: Orderer }
+data IssueQuoteCommand = { quoteId: QuoteId, userId: UserId, orderer: Orderer, validUntil: String }
 
-behavior priceLine : (product: Product, quantity: Quantity) -> OrderLine | SaleEnded
-    constructs OrderLine, SaleEnded
-let priceLine (product, quantity) = {
-    require product.onSale else SaleEnded
-    OrderLine { productId = product.id, quantity = quantity, unitPrice = product.price }
-}
+behavior loadProduct : (productId: ProductId) -> Product | ProductNotFound
+    constructs Product, ProductNotFound
+behavior loadCart : (userId: UserId) -> Cart
+    constructs Cart
+behavior saveItem : (pending: PendingItem) -> ItemAdded
+    constructs ItemAdded
+behavior priceCart : (userId: UserId) -> PricedCart | SaleEnded | ProductNotFound
+    constructs PricedCart, SaleEnded, ProductNotFound
+behavior saveOrder : (order: Order) -> OrderPlaced
+    constructs OrderPlaced
 
-behavior placeOrder : (orderId: OrderId, userId: UserId, orderer: Orderer, lines: List<OrderLine>) -> Order | EmptyCart
-    constructs Order, EmptyCart, Charge, Money
-let placeOrder (orderId, userId, orderer, lines) = {
-    require length(lines) >= 1 else EmptyCart
-    Order { id = orderId, userId = userId, orderer = orderer, lines = lines, charge = chargeOf(lines) }
-}
+behavior addItemToCart : (cmd: AddItemCommand) -> ItemAdded | ProductNotFound | SaleEnded | CartFull
+    requires loadProduct, loadCart, saveItem
+let addItemToCart (cmd, loadProduct, loadCart, saveItem) =
+    match loadProduct(cmd.productId) with
+        | ProductNotFound -> ProductNotFound
+        | Product { id, onSale, price } -> {
+            require onSale else SaleEnded
+            let c = loadCart(cmd.userId)
+            require c.currentQuantity.value + cmd.quantity.value <= 10000 else CartFull
+            saveItem(PendingItem { cart = c, item = CartItem { productId = cmd.productId, quantity = cmd.quantity } })
+        }
 
-behavior issueQuote : (quoteId: QuoteId, userId: UserId, orderer: Orderer, lines: List<OrderLine>, validUntil: String) -> Quotation | EmptyCart
-    constructs Quotation, EmptyCart, Charge, Money
-let issueQuote (quoteId, userId, orderer, lines, validUntil) = {
-    require length(lines) >= 1 else EmptyCart
-    Quotation { id = quoteId, userId = userId, orderer = orderer, lines = lines, charge = chargeOf(lines), validUntil = validUntil }
-}
+behavior placeOrder : (cmd: PlaceOrderCommand) -> OrderPlaced | EmptyCart | SaleEnded | ProductNotFound
+    requires priceCart, saveOrder
+let placeOrder (cmd, priceCart, saveOrder) =
+    match priceCart(cmd.userId) with
+        | SaleEnded -> SaleEnded
+        | ProductNotFound -> ProductNotFound
+        | PricedCart { lines } -> {
+            require length(lines) >= 1 else EmptyCart
+            saveOrder(Order { id = cmd.orderId, userId = cmd.userId, orderer = cmd.orderer, lines = lines, charge = chargeOf(lines) })
+        }
+
+behavior issueQuote : (cmd: IssueQuoteCommand) -> Quotation | EmptyCart | SaleEnded | ProductNotFound
+    requires priceCart
+let issueQuote (cmd, priceCart) =
+    match priceCart(cmd.userId) with
+        | SaleEnded -> SaleEnded
+        | ProductNotFound -> ProductNotFound
+        | PricedCart { lines } -> {
+            require length(lines) >= 1 else EmptyCart
+            Quotation { id = cmd.quoteId, userId = cmd.userId, orderer = cmd.orderer, lines = lines, charge = chargeOf(lines), validUntil = cmd.validUntil }
+        }
 
 let lineAmount (l: OrderLine) = l.quantity.value * l.unitPrice.value
 let subtotalOf (lines: List<OrderLine>) = fold((acc, l) -> acc + lineAmount(l), 0, lines)

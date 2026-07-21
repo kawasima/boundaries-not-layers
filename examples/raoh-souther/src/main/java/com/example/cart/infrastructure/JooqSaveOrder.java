@@ -7,25 +7,28 @@ import com.example.cart.domain.Corporation;
 import com.example.cart.domain.Individual;
 import com.example.cart.domain.Order;
 import com.example.cart.domain.OrderLine;
-import com.example.cart.domain.Orderer;
+import com.example.cart.domain.OrderPlaced;
+import com.example.cart.domain.SaveOrder;
+import java.util.Map;
 import java.util.UUID;
+import net.unit8.raoh.Path;
 import org.jooq.DSLContext;
-import org.springframework.stereotype.Repository;
 
 /**
- * 注文永続化の gateway。ヘッダ1行と明細 N 行を書く。Souther の値からは public アクセサで列値を読み出す。
- * 注文者（sealed）は switch でフラットな列に落とす（個人／法人で埋まる列が変わる）。
+ * {@code saveOrder} INJECTED 振る舞いの jOOQ 実装。注文ヘッダ1行と明細 N 行を書く。Souther の値からは
+ * public アクセサで列値を読み出す。注文者は switch でフラットな列に落とす（個人／法人で埋まる列が変わる）。
+ * 書き込んだ注文を {@code Order.encoder()} で Map 化し、{@link OrderPlaced} にデコードして返す。
  */
-@Repository
-public class OrderRepository {
+public final class JooqSaveOrder extends SaveOrder {
 
     private final DSLContext dsl;
 
-    public OrderRepository(DSLContext dsl) {
+    public JooqSaveOrder(DSLContext dsl) {
         this.dsl = dsl;
     }
 
-    public void save(Order order) {
+    @Override
+    public OrderPlaced apply(Order order) {
         UUID orderId = UUID.fromString(order.id().value());
         UUID userId = UUID.fromString(order.userId().value());
 
@@ -76,5 +79,8 @@ public class OrderRepository {
                             line.unitPrice().value())
                     .execute();
         }
+
+        return OrderPlaced.decoder().decode(
+                Map.of("order", Order.encoder().encode(order)), Path.ROOT).getOrThrow();
     }
 }
