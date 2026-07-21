@@ -4,10 +4,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 import com.example.cart.domain.EmptyCart;
+import com.example.cart.domain.Individual;
 import com.example.cart.domain.Order;
+import com.example.cart.domain.OrderId;
 import com.example.cart.domain.OrderPlaced;
+import com.example.cart.domain.Orderer;
 import com.example.cart.domain.PlaceOrder;
-import com.example.cart.domain.PlaceOrderCommand;
 import com.example.cart.domain.PlaceOrderResult;
 import com.example.cart.domain.PriceCart;
 import com.example.cart.domain.PriceCartResult;
@@ -25,8 +27,8 @@ import org.junit.jupiter.api.Test;
 /**
  * 価格・割引・合計のドメイン計算を DB 抜きで確かめる純粋テスト。ロジックは Souther の {@code placeOrder}
  * 振る舞いに載っている。placeOrder は priceCart と saveOrder を INJECTED で要求するので、in-memory の
- * フェイクを {@link PlaceOrder#bind} して直接検証する。値には public コンストラクタが無いので、境界と同じく
- * {@code decoder()} で組む。
+ * フェイクを {@link PlaceOrder#bind} して直接検証する。合成された振る舞いは多引数なので、値をそのまま
+ * {@code apply(orderId, userId, orderer)} へ渡す。値には public コンストラクタが無いので decoder で組む。
  */
 class OrderPricingTest {
 
@@ -67,16 +69,22 @@ class OrderPricingTest {
         }
     };
 
-    private static PlaceOrderCommand command() {
-        return unwrap(PlaceOrderCommand.decoder().decode(Map.of(
-                "orderId", UUID.randomUUID().toString(),
-                "userId", UUID.randomUUID().toString(),
-                "orderer", Map.of("type", "Individual", "email", "taro@example.com", "name", "山田太郎")),
-                Path.ROOT));
+    private static OrderId orderId() {
+        return unwrap(OrderId.decoder().decode(UUID.randomUUID().toString(), Path.ROOT));
+    }
+
+    private static UserId userId() {
+        return unwrap(UserId.decoder().decode(UUID.randomUUID().toString(), Path.ROOT));
+    }
+
+    private static Orderer orderer() {
+        return unwrap(Individual.decoder().decode(
+                Map.of("email", "taro@example.com", "name", "山田太郎"), Path.ROOT));
     }
 
     private static Order place(long unit, int qty) {
-        PlaceOrderResult result = PlaceOrder.bind(fakePrice(unit, qty), FAKE_SAVE).apply(command());
+        PlaceOrderResult result =
+                PlaceOrder.bind(fakePrice(unit, qty), FAKE_SAVE).apply(orderId(), userId(), orderer());
         return ((OrderPlaced) assertInstanceOf(OrderPlaced.class, result)).order();
     }
 
@@ -106,7 +114,8 @@ class OrderPricingTest {
 
     @Test
     void 空カートは注文にできない() {
-        PlaceOrderResult result = PlaceOrder.bind(emptyPrice(), FAKE_SAVE).apply(command());
+        PlaceOrderResult result =
+                PlaceOrder.bind(emptyPrice(), FAKE_SAVE).apply(orderId(), userId(), orderer());
         assertInstanceOf(EmptyCart.class, result);
     }
 }

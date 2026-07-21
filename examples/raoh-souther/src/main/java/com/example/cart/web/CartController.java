@@ -9,13 +9,12 @@ import com.example.cart.domain.Corporation;
 import com.example.cart.domain.EmptyCart;
 import com.example.cart.domain.Individual;
 import com.example.cart.domain.IssueQuote;
-import com.example.cart.domain.IssueQuoteCommand;
 import com.example.cart.domain.ItemAdded;
-import com.example.cart.domain.Orderer;
+import com.example.cart.domain.OrderId;
 import com.example.cart.domain.OrderPlaced;
 import com.example.cart.domain.PlaceOrder;
-import com.example.cart.domain.PlaceOrderCommand;
 import com.example.cart.domain.ProductNotFound;
+import com.example.cart.domain.QuoteId;
 import com.example.cart.domain.Quotation;
 import com.example.cart.domain.SaleEnded;
 import com.example.cart.domain.UserId;
@@ -34,6 +33,7 @@ import net.unit8.raoh.Path;
 import net.unit8.raoh.Result;
 import net.unit8.raoh.decode.Decoder;
 import net.unit8.raoh.decode.combinator.Tuple2;
+import net.unit8.raoh.decode.combinator.Tuple3;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -47,9 +47,10 @@ import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.JsonNode;
 
 /**
- * 全境界が集まる Web 層。JSON を raoh で {@code switch} デコード（Ok/Err）してコマンド record を組み、
- * Souther の COMPOSED 振る舞い（{@link AddItemToCart} / {@link PlaceOrder} / {@link IssueQuote}）を
- * 1 回呼ぶ。DB 参照・書き込みは振る舞いに INJECTED された gateway が担うので、Controller は薄い。
+ * 全境界が集まる Web 層。JSON を raoh で {@code switch} デコード（Ok/Err）し、Souther の COMPOSED 振る舞い
+ * （{@link AddItemToCart} / {@link PlaceOrder} / {@link IssueQuote}）を 1 回呼ぶ。合成された振る舞いは
+ * 多引数なので、decode した値をそのまま {@code apply(...)} へ渡す（コマンド record は要らない）。DB 参照・
+ * 書き込みは振る舞いに INJECTED された gateway が担うので、Controller は薄い。
  *
  * <p>失敗は2段。入力の型・形式エラー（decode 失敗）は 400、業務エラーは 422。前者は raoh の Err、後者は
  * 振る舞いが返す sum の失敗ケース（{@link SaleEnded} / {@link CartFull} / {@link EmptyCart} /
@@ -85,13 +86,14 @@ public class CartController {
     @PostMapping("/items")
     public ResponseEntity<Object> addItem(@RequestBody JsonNode body, Locale locale) {
         return switch (JsonCartDecoders.ADD_ITEM.decode(body)) {
-            case Ok(var cmd) -> tx.execute(status -> switch (addItemToCart.apply(cmd)) {
-                case ItemAdded ignored -> created(null);
-                case ProductNotFound ignored -> unprocessable(Map.of("error", "product_not_found"));
-                case SaleEnded ignored -> unprocessable(Map.of("error", "sale_ended"));
-                case CartFull ignored -> unprocessable(Map.of("error", "cart_full"));
-                default -> throw new IllegalStateException("unexpected addItemToCart result");
-            });
+            case Ok(Tuple3(var userId, var productId, var quantity)) ->
+                    tx.execute(status -> switch (addItemToCart.apply(userId, productId, quantity)) {
+                        case ItemAdded ignored -> created(null);
+                        case ProductNotFound ignored -> unprocessable("product_not_found");
+                        case SaleEnded ignored -> unprocessable("sale_ended");
+                        case CartFull ignored -> unprocessable("cart_full");
+                        default -> throw new IllegalStateException("unexpected addItemToCart result");
+                    });
             case Err(var issues) -> badRequest(errorBody(issues, locale));
         };
     }
@@ -100,15 +102,12 @@ public class CartController {
     public ResponseEntity<Object> checkout(@RequestBody JsonNode body, Locale locale) {
         return switch (JsonCartDecoders.CHECKOUT.decode(body)) {
             case Ok(Tuple2(var userId, var orderer)) -> {
-                PlaceOrderCommand cmd = unwrap(PlaceOrderCommand.decoder().decode(Map.of(
-                        "orderId", UUID.randomUUID().toString(),
-                        "userId", userId,
-                        "orderer", Orderer.encoder().encode(orderer)), Path.ROOT));
-                yield tx.execute(status -> switch (placeOrder.apply(cmd)) {
+                OrderId orderId = newOrderId();
+                yield tx.execute(status -> switch (placeOrder.apply(orderId, userId, orderer)) {
                     case OrderPlaced placed -> created(OrderViewEncoders.orderView(placed.order()));
-                    case EmptyCart ignored -> unprocessable(Map.of("error", "empty_cart"));
-                    case SaleEnded ignored -> unprocessable(Map.of("error", "sale_ended"));
-                    case ProductNotFound ignored -> unprocessable(Map.of("error", "product_not_found"));
+                    case EmptyCart ignored -> unprocessable("empty_cart");
+                    case SaleEnded ignored -> unprocessable("sale_ended");
+                    case ProductNotFound ignored -> unprocessable("product_not_found");
                     default -> throw new IllegalStateException("unexpected placeOrder result");
                 });
             }
@@ -123,17 +122,12 @@ public class CartController {
                 // 見積は法人限定。個人は型で弾く。
                 case Corporation ignored -> {
                     String validUntil = LocalDate.now().plusDays(30).toString();
-                    IssueQuoteCommand cmd = unwrap(IssueQuoteCommand.decoder().decode(Map.of(
-                            "quoteId", UUID.randomUUID().toString(),
-                            "userId", userId,
-                            "orderer", Orderer.encoder().encode(orderer),
-                            "validUntil", validUntil), Path.ROOT));
-                    yield switch (issueQuote.apply(cmd)) {
+                    yield switch (issueQuote.apply(newQuoteId(), userId, orderer, validUntil)) {
                         case Quotation quotation ->
                                 ResponseEntity.ok((Object) OrderViewEncoders.quotationView(quotation));
-                        case EmptyCart ignored2 -> unprocessable(Map.of("error", "empty_cart"));
-                        case SaleEnded ignored2 -> unprocessable(Map.of("error", "sale_ended"));
-                        case ProductNotFound ignored2 -> unprocessable(Map.of("error", "product_not_found"));
+                        case EmptyCart ignored2 -> unprocessable("empty_cart");
+                        case SaleEnded ignored2 -> unprocessable("sale_ended");
+                        case ProductNotFound ignored2 -> unprocessable("product_not_found");
                         default -> throw new IllegalStateException("unexpected issueQuote result");
                     };
                 }
@@ -159,6 +153,15 @@ public class CartController {
         };
     }
 
+    /** 採番した UUID を OrderId に組む（値オブジェクトに public コンストラクタが無いので decoder 経由）。 */
+    private static OrderId newOrderId() {
+        return unwrap(OrderId.decoder().decode(UUID.randomUUID().toString(), Path.ROOT));
+    }
+
+    private static QuoteId newQuoteId() {
+        return unwrap(QuoteId.decoder().decode(UUID.randomUUID().toString(), Path.ROOT));
+    }
+
     private static <T> T unwrap(Result<T> result) {
         return switch (result) {
             case Ok(var value) -> value;
@@ -169,6 +172,10 @@ public class CartController {
     private static ResponseEntity<Object> created(@Nullable Object body) {
         var builder = ResponseEntity.status(HttpStatus.CREATED);
         return body == null ? builder.build() : builder.body(body);
+    }
+
+    private static ResponseEntity<Object> unprocessable(String errorCode) {
+        return unprocessable(Map.of("error", errorCode));
     }
 
     private static ResponseEntity<Object> unprocessable(Object body) {

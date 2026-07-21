@@ -42,10 +42,6 @@ data SaleEnded
 data CartFull
 data EmptyCart
 
-data AddItemCommand = { userId: UserId, productId: ProductId, quantity: Quantity }
-data PlaceOrderCommand = { orderId: OrderId, userId: UserId, orderer: Orderer }
-data IssueQuoteCommand = { quoteId: QuoteId, userId: UserId, orderer: Orderer, validUntil: String }
-
 behavior loadProduct : (productId: ProductId) -> Product | ProductNotFound
     constructs Product, ProductNotFound
 behavior loadCart : (userId: UserId) -> Cart
@@ -57,38 +53,38 @@ behavior priceCart : (userId: UserId) -> PricedCart | SaleEnded | ProductNotFoun
 behavior saveOrder : (order: Order) -> OrderPlaced
     constructs OrderPlaced
 
-behavior addItemToCart : (cmd: AddItemCommand) -> ItemAdded | ProductNotFound | SaleEnded | CartFull
+behavior addItemToCart : (userId: UserId, productId: ProductId, quantity: Quantity) -> ItemAdded | ProductNotFound | SaleEnded | CartFull
     requires loadProduct, loadCart, saveItem
-let addItemToCart (cmd, loadProduct, loadCart, saveItem) =
-    match loadProduct(cmd.productId) with
+let addItemToCart (userId, productId, quantity, loadProduct, loadCart, saveItem) =
+    match loadProduct(productId) with
         | ProductNotFound -> ProductNotFound
         | Product { id, onSale, price } -> {
             require onSale else SaleEnded
-            let c = loadCart(cmd.userId)
-            require c.currentQuantity.value + cmd.quantity.value <= 10000 else CartFull
-            saveItem(PendingItem { cart = c, item = CartItem { productId = cmd.productId, quantity = cmd.quantity } })
+            let c = loadCart(userId)
+            require c.currentQuantity.value + quantity.value <= 10000 else CartFull
+            saveItem(PendingItem { cart = c, item = CartItem { productId = productId, quantity = quantity } })
         }
 
-behavior placeOrder : (cmd: PlaceOrderCommand) -> OrderPlaced | EmptyCart | SaleEnded | ProductNotFound
+behavior placeOrder : (orderId: OrderId, userId: UserId, orderer: Orderer) -> OrderPlaced | EmptyCart | SaleEnded | ProductNotFound
     requires priceCart, saveOrder
-let placeOrder (cmd, priceCart, saveOrder) =
-    match priceCart(cmd.userId) with
+let placeOrder (orderId, userId, orderer, priceCart, saveOrder) =
+    match priceCart(userId) with
         | SaleEnded -> SaleEnded
         | ProductNotFound -> ProductNotFound
         | PricedCart { lines } -> {
             require length(lines) >= 1 else EmptyCart
-            saveOrder(Order { id = cmd.orderId, userId = cmd.userId, orderer = cmd.orderer, lines = lines, charge = chargeOf(lines) })
+            saveOrder(Order { id = orderId, userId = userId, orderer = orderer, lines = lines, charge = chargeOf(lines) })
         }
 
-behavior issueQuote : (cmd: IssueQuoteCommand) -> Quotation | EmptyCart | SaleEnded | ProductNotFound
+behavior issueQuote : (quoteId: QuoteId, userId: UserId, orderer: Orderer, validUntil: String) -> Quotation | EmptyCart | SaleEnded | ProductNotFound
     requires priceCart
-let issueQuote (cmd, priceCart) =
-    match priceCart(cmd.userId) with
+let issueQuote (quoteId, userId, orderer, validUntil, priceCart) =
+    match priceCart(userId) with
         | SaleEnded -> SaleEnded
         | ProductNotFound -> ProductNotFound
         | PricedCart { lines } -> {
             require length(lines) >= 1 else EmptyCart
-            Quotation { id = cmd.quoteId, userId = cmd.userId, orderer = cmd.orderer, lines = lines, charge = chargeOf(lines), validUntil = cmd.validUntil }
+            Quotation { id = quoteId, userId = userId, orderer = orderer, lines = lines, charge = chargeOf(lines), validUntil = validUntil }
         }
 
 let lineAmount (l: OrderLine) = l.quantity.value * l.unitPrice.value
