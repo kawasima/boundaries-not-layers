@@ -1,0 +1,4 @@
+# Marp CLI configuration
+themeSet:
+  - themes/deck.css
+engine: ./scripts/marp-engine.js

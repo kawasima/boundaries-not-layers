@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Maven build output
+target/
+
+# Claude Code
+.claude/
+
+# Marp preview / generated output
+.preview*/
+*.pdf
+*.pptx
+
+# macOS
+.DS_Store
+
+# Editor
+*.swp
+*~
+
+# Generated slides
+slide.html

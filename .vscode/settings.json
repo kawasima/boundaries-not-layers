@@ -1,0 +1,6 @@
+{
+  "marp.themes": [
+    "themes/deck.css"
+  ],
+  "java.configuration.updateBuildConfiguration": "automatic"
+}

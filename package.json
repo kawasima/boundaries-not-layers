@@ -1,0 +1,22 @@
+{
+  "name": "jjug-night-202607",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "build": "marp slide.md --out slide.html --no-stdin && node scripts/inject-toc.js",
+    "watch": "node scripts/inject-toc.js --watch & marp slide.md --out slide.html --no-stdin --watch",
+    "pdf": "marp slide.md --pdf --allow-local-files --no-stdin",
+    "pptx": "marp slide.md --pptx --allow-local-files --no-stdin"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@marp-team/marp-core": "^4.2.0",
+    "highlight.js": "^11.11.1"
+  },
+  "devDependencies": {
+    "@marp-team/marp-cli": "^4.4.0"
+  }
+}

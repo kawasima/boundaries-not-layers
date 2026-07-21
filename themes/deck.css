@@ -1,0 +1,318 @@
+/* @theme deck */
+
+/* 既存テーマを継承したいなら import する（例: default） */
+@import "default";
+
+/* ============================================
+   背景画像（全スライド共通・スクロールしない）
+   ============================================
+   各スライドは <section> 単位でレンダリングされ、本文は
+   section 内で overflow-y:auto でスクロールする。背景を
+   section 自体に固定し、スクロールするのは中身だけにする
+   ことで「背景は動かず文字だけスクロール」を実現する。   */
+section {
+  background-image: url("./images/background.png");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-color: #1a1410; /* 画像が読めない環境のフォールバック */
+  overflow-y: auto;
+  padding-bottom: 2rem;
+}
+
+/* ============================================
+   暗幕（veil）とセクション扉（divider）
+   ============================================
+   明るい背景画像の上で本文を読ませたいスライドに使う。
+   `<!-- _class: veil -->` / `<!-- _class: divider -->` で適用。
+   背景画像の上に半透明の黒グラデーション層を重ねて暗くする
+   （::before オーバーレイは marp-core の SVG 構造で効かない）。 */
+section.veil {
+  background-image:
+    linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)),
+    url("./images/background.png");
+}
+
+section.divider {
+  background-image:
+    linear-gradient(rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.55)),
+    url("./images/background.png");
+}
+
+/* セクション扉: 中央寄せの大見出し */
+section.divider h2 {
+  font-size: 2.4em;
+  text-align: center;
+  margin-top: 30%;
+}
+
+/* ============================================
+   文字色とコントラスト（影／縁取りで浮かせる）
+   ============================================ */
+
+/* 本文・見出しは明色 + 多重の暗い text-shadow で縁取り風にする */
+section,
+section p,
+section li,
+section td,
+section th,
+section a {
+  color: #f4ece0;
+  text-shadow:
+    0 0 4px rgba(0, 0, 0, 0.95),
+    0 0 8px rgba(0, 0, 0, 0.85),
+    1px 1px 2px rgba(0, 0, 0, 0.9),
+    -1px -1px 2px rgba(0, 0, 0, 0.9);
+}
+
+/* 見出しは画像の上でも読めるよう白 */
+section h1,
+section h2,
+section h3,
+section h4 {
+  color: #ffffff;
+  text-shadow:
+    0 0 5px rgba(0, 0, 0, 1),
+    0 0 10px rgba(0, 0, 0, 0.9),
+    2px 2px 3px rgba(0, 0, 0, 0.95),
+    -1px -1px 2px rgba(0, 0, 0, 0.95);
+}
+
+/* 強調 */
+section strong {
+  color: #ffb870;
+}
+
+/* リンク */
+section a {
+  color: #9fd8ff;
+  text-decoration: underline;
+}
+
+/* コード例のソースリンク（脚注的に小さく・折り返さない） */
+section .src {
+  display: block;
+  margin-top: 0.2em;
+  font-size: 0.3em;
+  line-height: 1.4;
+  opacity: 0.7;
+  white-space: nowrap;
+  text-align: right;
+}
+section .src a {
+  color: #9fd8ff;
+}
+
+/* ============================================
+   表紙タイトルの調整
+   ============================================ */
+
+/* 最初のスライド（表紙）のh1タイトル */
+section:first-of-type h1 {
+  max-width: 80%;
+  margin: 0 auto 1em;
+  line-height: 1.5;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+/* 表紙の著者名（h1直後のp要素） */
+section:first-of-type h1 + p {
+  text-align: center;
+  font-size: 1.2em;
+  margin-top: 2em;
+  color: #f4ece0;
+}
+
+/* ============================================
+   テーブル
+   ============================================
+   グリッド線だけのテーブルは背景画像に埋もれて読めない
+   ため、セルに薄い暗背景を敷いて最低限の可読性を確保する。 */
+section table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+section th,
+section td {
+  background-color: rgba(20, 16, 12, 0.72);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+section th {
+  background-color: rgba(20, 16, 12, 0.85);
+}
+
+section img {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 100%;
+}
+
+/* ============================================
+   コードブロック（暗背景パネル）
+   ============================================
+   コードはシンタックスカラーが影では潰れるため、不透明に
+   近い暗パネルを敷いて読ませる。暗背景に合わせた配色。    */
+
+/* コードブロックの auto-scaling を無効にして固定サイズにする */
+section pre::part(auto-scaling) {
+  max-height: none !important;
+}
+
+/* コードブロック全体の背景 */
+section pre {
+  background-color: rgba(22, 24, 30, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  padding: 1.5em;
+  overflow-x: auto;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+
+section pre code {
+  color: #e6e6e6;
+  font-family: 'Fira Code', 'Consolas', 'Menlo', monospace;
+  font-size: 20px !important;
+  line-height: 1.6;
+  text-shadow: none;
+}
+
+/* インラインコード */
+section :not(pre) > code {
+  background-color: rgba(22, 24, 30, 0.9);
+  color: #e6e6e6;
+  padding: 0.1em 0.4em;
+  border-radius: 4px;
+  text-shadow: none;
+}
+
+/* ============================================
+   ドメイン記述ミニ言語のシンタックスハイライト
+   （暗背景向けに調整）
+   ============================================ */
+
+/* キーワード (data, behavior, List) */
+section code .hljs-keyword {
+  color: #6cb6ff;
+  font-weight: bold;
+}
+
+/* 演算子 (AND, OR) */
+section code .hljs-built_in {
+  color: #5ad4d4;
+  font-weight: bold;
+}
+
+/* 型名・識別子 */
+section code .hljs-type {
+  color: #5ad4d4;
+}
+
+/* タイトル（data/behaviorの後の名前） */
+section code .hljs-title {
+  color: #e0a677;
+  font-weight: bold;
+}
+
+/* クラス名 */
+section code .hljs-title.class_ {
+  color: #5ad4d4;
+}
+
+/* 演算子記号 (=, ->, ?) */
+section code .hljs-operator {
+  color: #c8c8c8;
+}
+
+/* コメント */
+section code .hljs-comment {
+  color: #7fb87f;
+  font-style: italic;
+}
+
+/* 文字列 */
+section code .hljs-string {
+  color: #e8a0a0;
+}
+
+/* 数値 */
+section code .hljs-number {
+  color: #84d49a;
+}
+
+/* ============================================
+   パターン紹介（1スライドにスクロールで縦に並べる）
+   ============================================
+   `<!-- _class: patterns veil -->` を付けたスライドに、
+   [パターン名 → 4コマ → 解説] のブロックを繰り返し置く。
+   各ブロックは画像（左）と解説（右）の横並び。section の
+   overflow-y:auto で、ページ全体を1枚のままスクロールする。 */
+section.patterns h2 {
+  margin: 0 0 1rem 0;
+}
+
+section.patterns .pat {
+  display: flex;
+  gap: 1.4rem;
+  align-items: flex-start;
+  margin: 0 0 2rem 0;
+  padding-bottom: 1.6rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+section.patterns .pat > img {
+  flex: 0 0 auto;
+  max-width: 46%;
+  max-height: 600px;
+  margin: 0;
+  background: #ffffff;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+
+section.patterns .pat > .txt {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+section.patterns .pat .txt h3 {
+  margin: 0 0 0.3em 0;
+  font-size: 1.2em;
+}
+
+section.patterns .pat .txt p,
+section.patterns .pat .txt li {
+  font-size: 0.8em;
+  line-height: 1.5;
+}
+
+section.patterns .pat .txt ul {
+  margin: 0.4em 0;
+  padding-left: 1.2em;
+}
+
+/* ============================================
+   評価軸の解説（1スライドにスクロール・テキスト主体）
+   ============================================
+   `<!-- _class: axes veil -->`。各軸を見出し＋定義＋例の
+   ブロックで縦に並べる。見出しに左アクセント罫を付ける。   */
+section.axes h2 {
+  margin: 0 0 0.6rem 0;
+}
+
+section.axes h3 {
+  margin: 0.9em 0 0.15em 0;
+  padding-left: 0.5em;
+  border-left: 5px solid #ffb870;
+  font-size: 1.15em;
+}
+
+section.axes p {
+  margin: 0.15em 0;
+  font-size: 0.86em;
+  line-height: 1.5;
+}
