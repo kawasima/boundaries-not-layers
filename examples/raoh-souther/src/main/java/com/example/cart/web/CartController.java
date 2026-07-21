@@ -92,7 +92,6 @@ public class CartController {
                         case ProductNotFound ignored -> unprocessable("product_not_found");
                         case SaleEnded ignored -> unprocessable("sale_ended");
                         case CartFull ignored -> unprocessable("cart_full");
-                        default -> throw new IllegalStateException("unexpected addItemToCart result");
                     });
             case Err(var issues) -> badRequest(errorBody(issues, locale));
         };
@@ -108,7 +107,6 @@ public class CartController {
                     case EmptyCart ignored -> unprocessable("empty_cart");
                     case SaleEnded ignored -> unprocessable("sale_ended");
                     case ProductNotFound ignored -> unprocessable("product_not_found");
-                    default -> throw new IllegalStateException("unexpected placeOrder result");
                 });
             }
             case Err(var issues) -> badRequest(errorBody(issues, locale));
@@ -128,11 +126,9 @@ public class CartController {
                         case EmptyCart ignored2 -> unprocessable("empty_cart");
                         case SaleEnded ignored2 -> unprocessable("sale_ended");
                         case ProductNotFound ignored2 -> unprocessable("product_not_found");
-                        default -> throw new IllegalStateException("unexpected issueQuote result");
                     };
                 }
                 case Individual ignored -> unprocessable(Map.of("error", "見積は法人のみ発行できます"));
-                default -> throw new IllegalStateException("unknown orderer: " + orderer);
             };
             case Err(var issues) -> badRequest(errorBody(issues, locale));
         };
