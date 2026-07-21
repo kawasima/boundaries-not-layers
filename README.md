@@ -2,7 +2,7 @@
 
 ## Examples
 
-`examples/` に、同じ「カート」機能を違う設計で実装した4プロジェクトを置いている。前半3つは、カートの不変条件「合計数量が上限を超えない」を守るときのトリレンマを示す。性能（全アイテムをロードしない）・純粋性（ドメインがリポジトリに触れない）・完全性（不変条件をドメイン自身が判断する）は同時に満たしにくく、どれも2つを取って1つを諦める。
+`examples/` に、同じ「カート」機能を違う設計で実装した5プロジェクトを置いている。前半3つは、カートの不変条件「合計数量が上限を超えない」を守るときのトリレンマを示す。性能（全アイテムをロードしない）・純粋性（ドメインがリポジトリに触れない）・完全性（不変条件をドメイン自身が判断する）は同時に満たしにくく、どれも2つを取って1つを諦める。
 
 - `performance-completeness`（純粋性を諦める）: [`CartForUpdate.add`](examples/performance-completeness/src/main/java/com/example/cart/domain/CartForUpdate.java#L29-L34) が内側からリポジトリへ委譲。完全＋高速だが、ドメインが更新中にI/O実行する。集計・価格照会・保存を自分で呼ぶ [`CheckoutService`](examples/performance-completeness/src/main/java/com/example/cart/domain/CheckoutService.java#L41-L55) 。
 - `performance-purity`（完全性を諦める）: [`AddItemToCartUseCase`](examples/performance-purity/src/main/java/com/example/cart/usecase/AddItemToCartUseCase.java#L41-L45) が `getItemCount() + quantity > UPPER_BOUND` を自前で判定する。純粋＋高速だが、不変条件がドメインの外にある。
@@ -18,6 +18,13 @@
   - [`PriceCart`](examples/raoh/src/main/java/com/example/cart/domain/PriceCart.java#L26-L33) は注文（`PlaceOrder`）と見積（`IssueQuote`）が共有する価格付けの振る舞い。
   - [`Orderer`](examples/raoh/src/main/java/com/example/cart/domain/Orderer.java#L11-L20) は sealed（`Individual` / `Corporation`）で、「法人番号の無い法人」を構築できない。
   - 失敗は例外でなく `Result`（`Ok` / `Err`）で返す。
+
+もう一歩進めて、ドメインそのものを実行可能な仕様として書くのが `raoh-souther`。data・invariant・behavior を Souther DSL で書き、raoh は境界の decode を担う。
+
+- `raoh-souther`（`raoh` の完全移植で、ドメインを Souther 生成に置き換えた版）: [`cart.sou`](examples/raoh-souther/src/main/souther/cart.sou) に値オブジェクト＋invariant・sealed な `Orderer`・純粋 behavior（`addToCart` / `priceLine` / `placeOrder` / `issueQuote`）を書くと、raoh の `Result` を返す `decoder()` / `encoder()` が導出される。
+  - Souther に無い正規化・正規表現（判別子つき Orderer、法人番号13桁）は [`JsonOrdererDecoders`](examples/raoh-souther/src/main/java/com/example/cart/web/JsonOrdererDecoders.java) で raoh が受け持ち、検証済みの値を Souther の `decoder()` に渡してドメイン型を組む。これが raoh と Souther の継ぎ目。
+  - I/O は `raoh` と同じ jOOQ リポジトリ。HTTP 契約・DB 効果・テストは `raoh` 版と同一で、違いはドメインが手書き Java か Souther 生成かだけ。
+  - JDK 25 が要る。Souther 0.1.0-rc1 は Maven Central 反映前なので、ビルドには souther をローカルに publish（`mvn install`）しておく。
 
 ## 使い方
 
