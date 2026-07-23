@@ -65,6 +65,31 @@ let addItemToCart (userId, productId, quantity, loadProduct, loadCart, saveItem)
             saveItem(PendingItem { cart = c, item = CartItem { productId = productId, quantity = quantity } })
         }
 
+// requires の依存を fake で用意すると、DB なしで addItemToCart をコンパイル時に検査できる。
+// loadProduct は Product | ProductNotFound を返すので、ケースごとに fake する。
+fake loadProduct
+    | (ProductId("p-1")) -> Product { id = ProductId("p-1"), onSale = true, price = Money(1000) }
+    | (ProductId("p-2")) -> Product { id = ProductId("p-2"), onSale = false, price = Money(500) }
+    | _ -> ProductNotFound
+
+fake loadCart
+    | (UserId("u-1")) -> Cart { id = CartId("c-1"), currentQuantity = TotalQuantity(0) }
+    | (UserId("u-full")) -> Cart { id = CartId("c-full"), currentQuantity = TotalQuantity(9999) }
+
+fake saveItem
+    | (PendingItem { cart = Cart { id = CartId("c-1"), currentQuantity = TotalQuantity(0) }, item = CartItem { productId = ProductId("p-1"), quantity = Quantity(2) } })
+        -> ItemAdded { productId = ProductId("p-1"), quantity = Quantity(2) }
+
+example addItemToCart
+    | "セール中の商品はカートに追加できる" :
+        (UserId("u-1"), ProductId("p-1"), Quantity(2)) -> ItemAdded { productId = ProductId("p-1"), quantity = Quantity(2) }
+    | "商品が見つからない" :
+        (UserId("u-1"), ProductId("p-404"), Quantity(1)) -> ProductNotFound
+    | "セール終了の商品は追加できない" :
+        (UserId("u-1"), ProductId("p-2"), Quantity(1)) -> SaleEnded
+    | "上限を超える数量はカート満杯になる" :
+        (UserId("u-full"), ProductId("p-1"), Quantity(2)) -> CartFull
+
 behavior placeOrder : (orderId: OrderId, userId: UserId, orderer: Orderer) -> OrderPlaced | EmptyCart | SaleEnded | ProductNotFound
     requires priceCart, saveOrder
 let placeOrder (orderId, userId, orderer, priceCart, saveOrder) =
@@ -76,6 +101,29 @@ let placeOrder (orderId, userId, orderer, priceCart, saveOrder) =
             saveOrder(Order { id = orderId, userId = userId, orderer = orderer, lines = lines, charge = chargeOf(lines) })
         }
 
+// priceCart は SaleEnded | ProductNotFound も返すので、ケースごとに fake する。
+// この fake は issueQuote の example とも共有する（fake はモジュール単位）。
+fake priceCart
+    | (UserId("u-1")) -> PricedCart { lines = [ OrderLine { productId = ProductId("p-1"), quantity = Quantity(3), unitPrice = Money(2000) } ] }
+    | (UserId("u-empty")) -> PricedCart { lines = [] }
+    | (UserId("u-sale-ended")) -> SaleEnded
+    | _ -> ProductNotFound
+
+fake saveOrder
+    | (Order { id = OrderId("o-1"), userId = UserId("u-1"), orderer = Individual { type = "Individual", email = Email("taro@example.com"), name = "Taro" }, lines = [ OrderLine { productId = ProductId("p-1"), quantity = Quantity(3), unitPrice = Money(2000) } ], charge = Charge { subtotal = Money(6000), discount = Money(600), total = Money(5400) } })
+        -> OrderPlaced { order = Order { id = OrderId("o-1"), userId = UserId("u-1"), orderer = Individual { type = "Individual", email = Email("taro@example.com"), name = "Taro" }, lines = [ OrderLine { productId = ProductId("p-1"), quantity = Quantity(3), unitPrice = Money(2000) } ], charge = Charge { subtotal = Money(6000), discount = Money(600), total = Money(5400) } } }
+
+example placeOrder
+    | "カートの内容で注文が確定し、5000円以上は割引が適用される" :
+        (OrderId("o-1"), UserId("u-1"), Individual { type = "Individual", email = Email("taro@example.com"), name = "Taro" })
+            -> OrderPlaced { order = Order { id = OrderId("o-1"), userId = UserId("u-1"), orderer = Individual { type = "Individual", email = Email("taro@example.com"), name = "Taro" }, lines = [ OrderLine { productId = ProductId("p-1"), quantity = Quantity(3), unitPrice = Money(2000) } ], charge = Charge { subtotal = Money(6000), discount = Money(600), total = Money(5400) } } }
+    | "カートが空なら注文できない" :
+        (OrderId("o-2"), UserId("u-empty"), Individual { type = "Individual", email = Email("taro@example.com"), name = "Taro" }) -> EmptyCart
+    | "セール終了なら注文できない" :
+        (OrderId("o-3"), UserId("u-sale-ended"), Individual { type = "Individual", email = Email("taro@example.com"), name = "Taro" }) -> SaleEnded
+    | "商品が見つからなければ注文できない" :
+        (OrderId("o-4"), UserId("u-404"), Individual { type = "Individual", email = Email("taro@example.com"), name = "Taro" }) -> ProductNotFound
+
 behavior issueQuote : (quoteId: QuoteId, userId: UserId, orderer: Orderer, validUntil: String) -> Quotation | EmptyCart | SaleEnded | ProductNotFound
     requires priceCart
 let issueQuote (quoteId, userId, orderer, validUntil, priceCart) =
@@ -86,6 +134,16 @@ let issueQuote (quoteId, userId, orderer, validUntil, priceCart) =
             require length(lines) >= 1 else EmptyCart
             Quotation { id = quoteId, userId = userId, orderer = orderer, lines = lines, charge = chargeOf(lines), validUntil = validUntil }
         }
+
+// priceCart の fake は placeOrder の example で定義済みのものを流用する。
+example issueQuote
+    | "見積を発行できる" :
+        (QuoteId("q-1"), UserId("u-1"), Corporation { type = "Corporation", email = Email("sales@example.com"), companyName = "Example Corp", corporateNumber = "1234567890123" }, "2026-08-31")
+            -> Quotation { id = QuoteId("q-1"), userId = UserId("u-1"), orderer = Corporation { type = "Corporation", email = Email("sales@example.com"), companyName = "Example Corp", corporateNumber = "1234567890123" }, lines = [ OrderLine { productId = ProductId("p-1"), quantity = Quantity(3), unitPrice = Money(2000) } ], charge = Charge { subtotal = Money(6000), discount = Money(600), total = Money(5400) }, validUntil = "2026-08-31" }
+    | "カートが空なら見積を発行できない" :
+        (QuoteId("q-2"), UserId("u-empty"), Corporation { type = "Corporation", email = Email("sales@example.com"), companyName = "Example Corp", corporateNumber = "1234567890123" }, "2026-08-31") -> EmptyCart
+    | "セール終了なら見積を発行できない" :
+        (QuoteId("q-3"), UserId("u-sale-ended"), Corporation { type = "Corporation", email = Email("sales@example.com"), companyName = "Example Corp", corporateNumber = "1234567890123" }, "2026-08-31") -> SaleEnded
 
 let lineAmount (l: OrderLine) = l.quantity.value * l.unitPrice.value
 let subtotalOf (lines: List<OrderLine>) = fold((acc, l) -> acc + lineAmount(l), 0, lines)

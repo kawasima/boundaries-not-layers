@@ -19,7 +19,7 @@
 
     <properties>
         <java.version>25</java.version>
-        <souther.version>0.1.0-rc1</souther.version>
+        <souther.version>0.1.0-rc2</souther.version>
         <raoh.version>0.6.0</raoh.version>
     </properties>
 

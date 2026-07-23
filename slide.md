@@ -112,6 +112,8 @@ CartController
 
 ---
 
+<!-- _class: veil -->
+
 ## 責務混在の防止
 
 > 責務を分離するために、責務ごとに層へ分ける。
@@ -143,6 +145,8 @@ public void handle(AddItemToCartCommand command) {
 
 ---
 
+<!-- _class: veil -->
+
 ## 依存関係の制御
 
 これはレイヤードアーキテクチャの目的そのものなので、その通りだが…
@@ -162,6 +166,8 @@ Application層がPresentation層をimportしていなくても、`Command` の�
 同様に、Repository InterfaceをDomain側へ置いて依存方向を逆転しても、ドメインモデルがDBのテーブル粒度や更新都合を反映していれば、意味的依存は残る。
 
 ---
+
+<!-- _class: veil -->
 
 ## テスト代替可能性
 
@@ -190,6 +196,8 @@ Application層がPresentation層をimportしていなくても、`Command` の�
 確かめたいのは割引後の合計という一点なのに、それが I/O と絡んでいるので、3つのモックが必要になる。
 
 ---
+
+<!-- _class: veil -->
 
 ## ドメイン知識の保護
 
@@ -220,6 +228,8 @@ importの向きは正しいのに、「法人なのに法人番号が無い」�
 Web層のBean Validationだけでチェックしているだけでは、ドメイン層では何も保護できていない。
 
 ---
+
+<!-- _class: veil -->
 
 ## 開発時の認知負荷低減
 
@@ -256,6 +266,8 @@ Orderer orderer = toOrderer(request.orderer());  // フォーム → ドメイ�
 
 ---
 
+<!-- _class: veil -->
+
 ## 並行作業
 
 レイヤーごとに担当を分ければ、並行開発できる。
@@ -282,6 +294,8 @@ DBチーム
 - チームが端から端まで所有できること
 
 ---
+
+<!-- _class: veil -->
 
 ## 再利用
 
