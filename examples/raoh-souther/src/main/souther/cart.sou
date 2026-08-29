@@ -1,5 +1,4 @@
 module com.example.cart.domain
-import String ( contains )
 import List ( fold, length )
 
 data Money = Int
@@ -7,8 +6,10 @@ data Quantity = Int
     invariant value > 0
 data TotalQuantity = Int
     invariant value >= 0
+// 形式（@ の位置、使える文字）は境界の raoh が見る。モデルが述べるのは、
+// メールアドレスが取りうる最短の長さ（a@b の3文字）まで。
 data Email = String
-    invariant String.contains("@", value)
+    invariant String.length(value) >= 3
 data CartId = String
     invariant String.length(value) > 0
 data ProductId = String
@@ -32,7 +33,9 @@ data Charge = { subtotal: Money, discount: Money, total: Money }
 data Order = { id: OrderId, userId: UserId, orderer: Orderer, lines: List<OrderLine>, charge: Charge }
 data Quotation = { id: QuoteId, userId: UserId, orderer: Orderer, lines: List<OrderLine>, charge: Charge, validUntil: String }
 
+// カートに入れようとしている明細。上限を超えないことは、この型の成立条件。
 data PendingItem = { cart: Cart, item: CartItem }
+    invariant withinCapacity = cart.currentQuantity.value + item.quantity.value <= 10000
 data PricedCart = { lines: List<OrderLine> }
 data ItemAdded = { productId: ProductId, quantity: Quantity }
 data OrderPlaced = { order: Order }
@@ -43,41 +46,51 @@ data CartFull
 data EmptyCart
 
 behavior loadProduct : (productId: ProductId) -> Product | ProductNotFound
-    constructs Product, ProductNotFound
+    constructs Product
 behavior loadCart : (userId: UserId) -> Cart
     constructs Cart
 behavior saveItem : (pending: PendingItem) -> ItemAdded
     constructs ItemAdded
 behavior priceCart : (userId: UserId) -> PricedCart | SaleEnded | ProductNotFound
-    constructs PricedCart, SaleEnded, ProductNotFound
+    constructs PricedCart
 behavior saveOrder : (order: Order) -> OrderPlaced
     constructs OrderPlaced
 
 behavior addItemToCart : (userId: UserId, productId: ProductId, quantity: Quantity) -> ItemAdded | ProductNotFound | SaleEnded | CartFull
-    requires loadProduct, loadCart, saveItem
+    depends on loadProduct, loadCart, saveItem
 let addItemToCart (userId, productId, quantity, loadProduct, loadCart, saveItem) =
     match loadProduct(productId) with
         | ProductNotFound -> ProductNotFound
         | Product { id, onSale, price } -> {
-            require onSale else SaleEnded
+            guard onSale else SaleEnded
             let c = loadCart(userId)
-            require c.currentQuantity.value + quantity.value <= 10000 else CartFull
-            saveItem(PendingItem { cart = c, item = CartItem { productId = productId, quantity = quantity } })
+            guard PendingItem { cart = c, item = CartItem { productId = productId, quantity = quantity } } as pending
+                else | withinCapacity -> CartFull
+            saveItem(pending)
         }
 
-// requires の依存を fake で用意すると、DB なしで addItemToCart をコンパイル時に検査できる。
+// depends on の依存を fake で用意すると、DB なしで addItemToCart をコンパイル時に検査できる。
 // loadProduct は Product | ProductNotFound を返すので、ケースごとに fake する。
 fake loadProduct
     | (ProductId("p-1")) -> Product { id = ProductId("p-1"), onSale = true, price = Money(1000) }
     | (ProductId("p-2")) -> Product { id = ProductId("p-2"), onSale = false, price = Money(500) }
+    | (ProductId("p")) -> Product { id = ProductId("p"), onSale = true, price = Money(1000) }
     | _ -> ProductNotFound
 
 fake loadCart
     | (UserId("u-1")) -> Cart { id = CartId("c-1"), currentQuantity = TotalQuantity(0) }
     | (UserId("u-full")) -> Cart { id = CartId("c-full"), currentQuantity = TotalQuantity(9999) }
+    | (UserId("u-brim")) -> Cart { id = CartId("c-brim"), currentQuantity = TotalQuantity(9998) }
+    | (UserId("u")) -> Cart { id = CartId("c"), currentQuantity = TotalQuantity(0) }
 
 fake saveItem
     | (PendingItem { cart = Cart { id = CartId("c-1"), currentQuantity = TotalQuantity(0) }, item = CartItem { productId = ProductId("p-1"), quantity = Quantity(2) } })
+        -> ItemAdded { productId = ProductId("p-1"), quantity = Quantity(2) }
+    | (PendingItem { cart = Cart { id = CartId("c"), currentQuantity = TotalQuantity(0) }, item = CartItem { productId = ProductId("p"), quantity = Quantity(1) } })
+        -> ItemAdded { productId = ProductId("p"), quantity = Quantity(1) }
+    | (PendingItem { cart = Cart { id = CartId("c-1"), currentQuantity = TotalQuantity(5) }, item = CartItem { productId = ProductId("p-1"), quantity = Quantity(2) } })
+        -> ItemAdded { productId = ProductId("p-1"), quantity = Quantity(2) }
+    | (PendingItem { cart = Cart { id = CartId("c-brim"), currentQuantity = TotalQuantity(9998) }, item = CartItem { productId = ProductId("p-1"), quantity = Quantity(2) } })
         -> ItemAdded { productId = ProductId("p-1"), quantity = Quantity(2) }
 
 example addItemToCart
@@ -89,15 +102,19 @@ example addItemToCart
         (UserId("u-1"), ProductId("p-2"), Quantity(1)) -> SaleEnded
     | "上限を超える数量はカート満杯になる" :
         (UserId("u-full"), ProductId("p-1"), Quantity(2)) -> CartFull
+    | "合計がちょうど上限なら追加できる" :
+        (UserId("u-brim"), ProductId("p-1"), Quantity(2)) -> ItemAdded { productId = ProductId("p-1"), quantity = Quantity(2) }
+    | "識別子は1文字でも成立する" :
+        (UserId("u"), ProductId("p"), Quantity(1)) -> ItemAdded { productId = ProductId("p"), quantity = Quantity(1) }
 
 behavior placeOrder : (orderId: OrderId, userId: UserId, orderer: Orderer) -> OrderPlaced | EmptyCart | SaleEnded | ProductNotFound
-    requires priceCart, saveOrder
+    depends on priceCart, saveOrder
 let placeOrder (orderId, userId, orderer, priceCart, saveOrder) =
     match priceCart(userId) with
         | SaleEnded -> SaleEnded
         | ProductNotFound -> ProductNotFound
         | PricedCart { lines } -> {
-            require length(lines) >= 1 else EmptyCart
+            guard length(lines) >= 1 else EmptyCart
             saveOrder(Order { id = orderId, userId = userId, orderer = orderer, lines = lines, charge = chargeOf(lines) })
         }
 
@@ -107,43 +124,93 @@ fake priceCart
     | (UserId("u-1")) -> PricedCart { lines = [ OrderLine { productId = ProductId("p-1"), quantity = Quantity(3), unitPrice = Money(2000) } ] }
     | (UserId("u-empty")) -> PricedCart { lines = [] }
     | (UserId("u-sale-ended")) -> SaleEnded
+    | (UserId("u-small")) -> PricedCart { lines = [ OrderLine { productId = ProductId("p-1"), quantity = Quantity(1), unitPrice = Money(1000) } ] }
     | _ -> ProductNotFound
 
 fake saveOrder
-    | (Order { id = OrderId("o-1"), userId = UserId("u-1"), orderer = Individual { type = "Individual", email = Email("taro@example.com"), name = "Taro" }, lines = [ OrderLine { productId = ProductId("p-1"), quantity = Quantity(3), unitPrice = Money(2000) } ], charge = Charge { subtotal = Money(6000), discount = Money(600), total = Money(5400) } })
-        -> OrderPlaced { order = Order { id = OrderId("o-1"), userId = UserId("u-1"), orderer = Individual { type = "Individual", email = Email("taro@example.com"), name = "Taro" }, lines = [ OrderLine { productId = ProductId("p-1"), quantity = Quantity(3), unitPrice = Money(2000) } ], charge = Charge { subtotal = Money(6000), discount = Money(600), total = Money(5400) } } }
+    | (Order { id = OrderId("o"), userId = UserId("u"), orderer = Individual { email = Email("a@b"), name = "Taro" }, lines = [ OrderLine { productId = ProductId("p"), quantity = Quantity(1), unitPrice = Money(1000) } ], charge = Charge { subtotal = Money(1000), discount = Money(0), total = Money(1000) } })
+        -> OrderPlaced { order = Order { id = OrderId("o"), userId = UserId("u"), orderer = Individual { email = Email("a@b"), name = "Taro" }, lines = [ OrderLine { productId = ProductId("p"), quantity = Quantity(1), unitPrice = Money(1000) } ], charge = Charge { subtotal = Money(1000), discount = Money(0), total = Money(1000) } } }
+    | (Order { id = OrderId("o-1"), userId = UserId("u-1"), orderer = Individual { email = Email("taro@example.com"), name = "Taro" }, lines = [ OrderLine { productId = ProductId("p-1"), quantity = Quantity(3), unitPrice = Money(2000) } ], charge = Charge { subtotal = Money(6000), discount = Money(600), total = Money(5400) } })
+        -> OrderPlaced { order = Order { id = OrderId("o-1"), userId = UserId("u-1"), orderer = Individual { email = Email("taro@example.com"), name = "Taro" }, lines = [ OrderLine { productId = ProductId("p-1"), quantity = Quantity(3), unitPrice = Money(2000) } ], charge = Charge { subtotal = Money(6000), discount = Money(600), total = Money(5400) } } }
+    | (Order { id = OrderId("o"), userId = UserId("u-small"), orderer = Corporation { email = Email("sales@example.com"), companyName = "Example Corp", corporateNumber = "1234567890123" }, lines = [ OrderLine { productId = ProductId("p-1"), quantity = Quantity(1), unitPrice = Money(1000) } ], charge = Charge { subtotal = Money(1000), discount = Money(0), total = Money(1000) } })
+        -> OrderPlaced { order = Order { id = OrderId("o"), userId = UserId("u-small"), orderer = Corporation { email = Email("sales@example.com"), companyName = "Example Corp", corporateNumber = "1234567890123" }, lines = [ OrderLine { productId = ProductId("p-1"), quantity = Quantity(1), unitPrice = Money(1000) } ], charge = Charge { subtotal = Money(1000), discount = Money(0), total = Money(1000) } } }
 
 example placeOrder
     | "カートの内容で注文が確定し、5000円以上は割引が適用される" :
-        (OrderId("o-1"), UserId("u-1"), Individual { type = "Individual", email = Email("taro@example.com"), name = "Taro" })
-            -> OrderPlaced { order = Order { id = OrderId("o-1"), userId = UserId("u-1"), orderer = Individual { type = "Individual", email = Email("taro@example.com"), name = "Taro" }, lines = [ OrderLine { productId = ProductId("p-1"), quantity = Quantity(3), unitPrice = Money(2000) } ], charge = Charge { subtotal = Money(6000), discount = Money(600), total = Money(5400) } } }
+        (OrderId("o-1"), UserId("u-1"), Individual { email = Email("taro@example.com"), name = "Taro" })
+            -> OrderPlaced { order = Order { id = OrderId("o-1"), userId = UserId("u-1"), orderer = Individual { email = Email("taro@example.com"), name = "Taro" }, lines = [ OrderLine { productId = ProductId("p-1"), quantity = Quantity(3), unitPrice = Money(2000) } ], charge = Charge { subtotal = Money(6000), discount = Money(600), total = Money(5400) } } }
     | "カートが空なら注文できない" :
-        (OrderId("o-2"), UserId("u-empty"), Individual { type = "Individual", email = Email("taro@example.com"), name = "Taro" }) -> EmptyCart
+        (OrderId("o-2"), UserId("u-empty"), Individual { email = Email("taro@example.com"), name = "Taro" }) -> EmptyCart
     | "セール終了なら注文できない" :
-        (OrderId("o-3"), UserId("u-sale-ended"), Individual { type = "Individual", email = Email("taro@example.com"), name = "Taro" }) -> SaleEnded
+        (OrderId("o-3"), UserId("u-sale-ended"), Individual { email = Email("taro@example.com"), name = "Taro" }) -> SaleEnded
     | "商品が見つからなければ注文できない" :
-        (OrderId("o-4"), UserId("u-404"), Individual { type = "Individual", email = Email("taro@example.com"), name = "Taro" }) -> ProductNotFound
+        (OrderId("o-4"), UserId("u-404"), Individual { email = Email("taro@example.com"), name = "Taro" }) -> ProductNotFound
+    | "5000円未満なら割引はつかない。法人も同じ注文ができる" :
+        (OrderId("o"), UserId("u-small"), Corporation { email = Email("sales@example.com"), companyName = "Example Corp", corporateNumber = "1234567890123" })
+            -> OrderPlaced { order = Order { id = OrderId("o"), userId = UserId("u-small"), orderer = Corporation { email = Email("sales@example.com"), companyName = "Example Corp", corporateNumber = "1234567890123" }, lines = [ OrderLine { productId = ProductId("p-1"), quantity = Quantity(1), unitPrice = Money(1000) } ], charge = Charge { subtotal = Money(1000), discount = Money(0), total = Money(1000) } } }
 
-behavior issueQuote : (quoteId: QuoteId, userId: UserId, orderer: Orderer, validUntil: String) -> Quotation | EmptyCart | SaleEnded | ProductNotFound
-    requires priceCart
+// 見積は法人限定。それを実行時の判定ではなく、注文者の型で表す。
+behavior issueQuote : (quoteId: QuoteId, userId: UserId, orderer: Corporation, validUntil: String) -> Quotation | EmptyCart | SaleEnded | ProductNotFound
+    depends on priceCart
 let issueQuote (quoteId, userId, orderer, validUntil, priceCart) =
     match priceCart(userId) with
         | SaleEnded -> SaleEnded
         | ProductNotFound -> ProductNotFound
         | PricedCart { lines } -> {
-            require length(lines) >= 1 else EmptyCart
+            guard length(lines) >= 1 else EmptyCart
             Quotation { id = quoteId, userId = userId, orderer = orderer, lines = lines, charge = chargeOf(lines), validUntil = validUntil }
         }
 
 // priceCart の fake は placeOrder の example で定義済みのものを流用する。
 example issueQuote
     | "見積を発行できる" :
-        (QuoteId("q-1"), UserId("u-1"), Corporation { type = "Corporation", email = Email("sales@example.com"), companyName = "Example Corp", corporateNumber = "1234567890123" }, "2026-08-31")
-            -> Quotation { id = QuoteId("q-1"), userId = UserId("u-1"), orderer = Corporation { type = "Corporation", email = Email("sales@example.com"), companyName = "Example Corp", corporateNumber = "1234567890123" }, lines = [ OrderLine { productId = ProductId("p-1"), quantity = Quantity(3), unitPrice = Money(2000) } ], charge = Charge { subtotal = Money(6000), discount = Money(600), total = Money(5400) }, validUntil = "2026-08-31" }
+        (QuoteId("q-1"), UserId("u-1"), Corporation { email = Email("sales@example.com"), companyName = "Example Corp", corporateNumber = "1234567890123" }, "2026-08-31")
+            -> Quotation { id = QuoteId("q-1"), userId = UserId("u-1"), orderer = Corporation { email = Email("sales@example.com"), companyName = "Example Corp", corporateNumber = "1234567890123" }, lines = [ OrderLine { productId = ProductId("p-1"), quantity = Quantity(3), unitPrice = Money(2000) } ], charge = Charge { subtotal = Money(6000), discount = Money(600), total = Money(5400) }, validUntil = "2026-08-31" }
     | "カートが空なら見積を発行できない" :
-        (QuoteId("q-2"), UserId("u-empty"), Corporation { type = "Corporation", email = Email("sales@example.com"), companyName = "Example Corp", corporateNumber = "1234567890123" }, "2026-08-31") -> EmptyCart
+        (QuoteId("q-2"), UserId("u-empty"), Corporation { email = Email("sales@example.com"), companyName = "Example Corp", corporateNumber = "1234567890123" }, "2026-08-31") -> EmptyCart
     | "セール終了なら見積を発行できない" :
-        (QuoteId("q-3"), UserId("u-sale-ended"), Corporation { type = "Corporation", email = Email("sales@example.com"), companyName = "Example Corp", corporateNumber = "1234567890123" }, "2026-08-31") -> SaleEnded
+        (QuoteId("q-3"), UserId("u-sale-ended"), Corporation { email = Email("sales@example.com"), companyName = "Example Corp", corporateNumber = "1234567890123" }, "2026-08-31") -> SaleEnded
+    | "商品が見つからなければ見積を発行できない" :
+        (QuoteId("q-4"), UserId("u-404"), Corporation { email = Email("sales@example.com"), companyName = "Example Corp", corporateNumber = "1234567890123" }, "2026-08-31") -> ProductNotFound
+    | "メールアドレスは最短の3文字でも見積を発行できる" :
+        (QuoteId("q-5"), UserId("u-1"), Corporation { email = Email("a@b"), companyName = "Example Corp", corporateNumber = "1234567890123" }, "2026-08-31")
+            -> Quotation { id = QuoteId("q-5"), userId = UserId("u-1"), orderer = Corporation { email = Email("a@b"), companyName = "Example Corp", corporateNumber = "1234567890123" }, lines = [ OrderLine { productId = ProductId("p-1"), quantity = Quantity(3), unitPrice = Money(2000) } ], charge = Charge { subtotal = Money(6000), discount = Money(600), total = Money(5400) }, validUntil = "2026-08-31" }
+    | "5000円未満なら割引はつかない" :
+        (QuoteId("q"), UserId("u-small"), Corporation { email = Email("sales@example.com"), companyName = "Example Corp", corporateNumber = "1234567890123" }, "2026-08-31")
+            -> Quotation { id = QuoteId("q"), userId = UserId("u-small"), orderer = Corporation { email = Email("sales@example.com"), companyName = "Example Corp", corporateNumber = "1234567890123" }, lines = [ OrderLine { productId = ProductId("p-1"), quantity = Quantity(1), unitPrice = Money(1000) } ], charge = Charge { subtotal = Money(1000), discount = Money(0), total = Money(1000) }, validUntil = "2026-08-31" }
+
+// 注入する behavior にも例を書いておくと、Java 実装が何を返すべきかがモデルに残る。
+// 実装はモデルの外にあるので、これらの行は pending（実装待ち）として数えられる。
+example loadProduct
+    | "販売中の商品を読み出す" : (ProductId("p-1")) -> Product { id = ProductId("p-1"), onSale = true, price = Money(1000) }
+    | "無い商品は見つからない" : (ProductId("p-404")) -> ProductNotFound
+    | "識別子は1文字でもよい" : (ProductId("p")) -> Product { id = ProductId("p"), onSale = true, price = Money(1000) }
+
+example loadCart
+    | "カートを読み出す" : (UserId("u-1")) -> Cart { id = CartId("c-1"), currentQuantity = TotalQuantity(0) }
+    | "識別子は1文字でもよい" : (UserId("u")) -> Cart { id = CartId("c"), currentQuantity = TotalQuantity(0) }
+
+example saveItem
+    | "空のカートへ保存する" : (PendingItem { cart = Cart { id = CartId("c"), currentQuantity = TotalQuantity(0) }, item = CartItem { productId = ProductId("p"), quantity = Quantity(1) } })
+        -> ItemAdded { productId = ProductId("p"), quantity = Quantity(1) }
+    | "商品が入っているカートへ保存する" : (PendingItem { cart = Cart { id = CartId("c-1"), currentQuantity = TotalQuantity(5) }, item = CartItem { productId = ProductId("p-1"), quantity = Quantity(2) } })
+        -> ItemAdded { productId = ProductId("p-1"), quantity = Quantity(2) }
+    | "合計がちょうど上限になる明細を保存する" : (PendingItem { cart = Cart { id = CartId("c-brim"), currentQuantity = TotalQuantity(9998) }, item = CartItem { productId = ProductId("p-1"), quantity = Quantity(2) } })
+        -> ItemAdded { productId = ProductId("p-1"), quantity = Quantity(2) }
+
+example priceCart
+    | "明細に価格をつける" : (UserId("u-1")) -> PricedCart { lines = [ OrderLine { productId = ProductId("p-1"), quantity = Quantity(3), unitPrice = Money(2000) } ] }
+    | "セールが終わっていれば価格をつけられない" : (UserId("u-sale-ended")) -> SaleEnded
+    | "商品が無ければ価格をつけられない" : (UserId("u-404")) -> ProductNotFound
+    | "識別子は1文字でもよい" : (UserId("u")) -> ProductNotFound
+
+example saveOrder
+    | "個人の注文を保存する" : (Order { id = OrderId("o-1"), userId = UserId("u-1"), orderer = Individual { email = Email("taro@example.com"), name = "Taro" }, lines = [ OrderLine { productId = ProductId("p-1"), quantity = Quantity(3), unitPrice = Money(2000) } ], charge = Charge { subtotal = Money(6000), discount = Money(600), total = Money(5400) } })
+        -> OrderPlaced { order = Order { id = OrderId("o-1"), userId = UserId("u-1"), orderer = Individual { email = Email("taro@example.com"), name = "Taro" }, lines = [ OrderLine { productId = ProductId("p-1"), quantity = Quantity(3), unitPrice = Money(2000) } ], charge = Charge { subtotal = Money(6000), discount = Money(600), total = Money(5400) } } }
+    | "法人の注文を保存する" : (Order { id = OrderId("o"), userId = UserId("u-small"), orderer = Corporation { email = Email("sales@example.com"), companyName = "Example Corp", corporateNumber = "1234567890123" }, lines = [ OrderLine { productId = ProductId("p-1"), quantity = Quantity(1), unitPrice = Money(1000) } ], charge = Charge { subtotal = Money(1000), discount = Money(0), total = Money(1000) } })
+        -> OrderPlaced { order = Order { id = OrderId("o"), userId = UserId("u-small"), orderer = Corporation { email = Email("sales@example.com"), companyName = "Example Corp", corporateNumber = "1234567890123" }, lines = [ OrderLine { productId = ProductId("p-1"), quantity = Quantity(1), unitPrice = Money(1000) } ], charge = Charge { subtotal = Money(1000), discount = Money(0), total = Money(1000) } } }
+    | "識別子は1文字でもよい" : (Order { id = OrderId("o"), userId = UserId("u"), orderer = Individual { email = Email("a@b"), name = "Taro" }, lines = [ OrderLine { productId = ProductId("p"), quantity = Quantity(1), unitPrice = Money(1000) } ], charge = Charge { subtotal = Money(1000), discount = Money(0), total = Money(1000) } })
+        -> OrderPlaced { order = Order { id = OrderId("o"), userId = UserId("u"), orderer = Individual { email = Email("a@b"), name = "Taro" }, lines = [ OrderLine { productId = ProductId("p"), quantity = Quantity(1), unitPrice = Money(1000) } ], charge = Charge { subtotal = Money(1000), discount = Money(0), total = Money(1000) } } }
 
 let lineAmount (l: OrderLine) = l.quantity.value * l.unitPrice.value
 let subtotalOf (lines: List<OrderLine>) = fold((acc, l) -> acc + lineAmount(l), 0, lines)

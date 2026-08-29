@@ -117,9 +117,10 @@ public class CartController {
     public ResponseEntity<Object> quote(@RequestBody JsonNode body, Locale locale) {
         return switch (JsonCartDecoders.CHECKOUT.decode(body)) {
             case Ok(Tuple2(var userId, var orderer)) -> switch (orderer) {
-                case Corporation _ -> {
+                // 見積は法人限定。behavior の引数が Corporation なので、ここで型を絞る。
+                case Corporation corporation -> {
                     String validUntil = LocalDate.now().plusDays(30).toString();
-                    yield switch (issueQuote.apply(newQuoteId(), userId, orderer, validUntil)) {
+                    yield switch (issueQuote.apply(newQuoteId(), userId, corporation, validUntil)) {
                         case Quotation quotation ->
                                 ResponseEntity.ok(OrderViewEncoders.quotationView(quotation));
                         case EmptyCart _ -> unprocessable("empty_cart");
