@@ -19,14 +19,15 @@
 
     <properties>
         <java.version>25</java.version>
-        <souther.version>0.1.0-rc2</souther.version>
-        <raoh.version>0.6.0</raoh.version>
+        <souther.version>0.1.0</souther.version>
+        <souther.plugin.version>0.1.0</souther.plugin.version>
+        <raoh.version>0.7.2</raoh.version>
     </properties>
 
     <dependencies>
         <!-- Souther 生成物のランタイム -->
         <dependency>
-            <groupId>net.unit8.souther</groupId>
+            <groupId>org.souther-lang</groupId>
             <artifactId>souther-runtime</artifactId>
             <version>${souther.version}</version>
         </dependency>
@@ -75,30 +76,17 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
+            <!-- src/main/souther を target/classes へコンパイルする。 -->
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
+                <groupId>org.souther-lang</groupId>
+                <artifactId>souther-maven-plugin</artifactId>
+                <version>${souther.plugin.version}</version>
+                <configuration>
+                    <southerVersion>${souther.version}</southerVersion>
+                </configuration>
                 <executions>
                     <execution>
-                        <id>default-compile</id>
-                        <configuration>
-                            <annotationProcessorPaths>
-                                <path>
-                                    <groupId>net.unit8.souther</groupId>
-                                    <artifactId>souther-compiler</artifactId>
-                                    <version>${souther.version}</version>
-                                </path>
-                            </annotationProcessorPaths>
-                            <compilerArgs>
-                                <arg>-Asouther.source=${project.basedir}/src/main/souther</arg>
-                            </compilerArgs>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>default-testCompile</id>
-                        <configuration>
-                            <proc>none</proc>
-                        </configuration>
+                        <goals><goal>compile</goal></goals>
                     </execution>
                 </executions>
             </plugin>

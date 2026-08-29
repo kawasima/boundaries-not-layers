@@ -24,7 +24,8 @@
 - `raoh-souther`（`raoh` の完全移植で、ドメインを Souther 生成に置き換えた版）: [`cart.sou`](examples/raoh-souther/src/main/souther/cart.sou) に値オブジェクト＋invariant・sealed な `Orderer`・純粋 behavior（`addToCart` / `priceLine` / `placeOrder` / `issueQuote`）を書くと、raoh の `Result` を返す `decoder()` / `encoder()` が導出される。
   - Souther に無い正規化・正規表現（判別子つき Orderer、法人番号13桁）は [`JsonOrdererDecoders`](examples/raoh-souther/src/main/java/com/example/cart/web/JsonOrdererDecoders.java) で raoh が受け持ち、検証済みの値を Souther の `decoder()` に渡してドメイン型を組む。これが raoh と Souther の継ぎ目。
   - DB アクセスは Souther の**注入 behavior**（`loadProduct` / `loadCart` / `saveItem` / `priceCart` / `saveOrder`、jOOQ で実装）で、合成 behavior が `raoh` 版と同じく I/O を組み込む。Controller は decode→コマンド→振る舞い呼び出し→encode の薄い層。HTTP 契約・DB 効果・テストは `raoh` 版と同一。
-  - JDK 25 が要る。Souther 0.1.0-rc1 は Maven Central 反映前なので、ビルドには souther をローカルに publish（`mvn install`）しておく。
+  - JDK 25 が要る。ビルドは `org.souther-lang:souther-maven-plugin` が `src/main/souther` を `target/classes` へコンパイルする。Souther は 0.1.0、raoh は 0.7.2 を使う。
+  - 例が足りているかは `souther examples src/main/souther/cart.sou` で確かめる（現在 `adequacy: satisfied`）。`--strict` を付けると、埋まっていない指摘でビルドが落ちる。
 
 ## 使い方
 
